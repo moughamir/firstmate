@@ -902,6 +902,7 @@ The CLI matrix was checked directly:
 | Literal send | `herdr pane send-text <pane> <text> --session <name>` | Left text unsubmitted until Enter. |
 | Keys | `herdr pane send-keys <pane> enter|escape|ctrl+c --session <name>` | Enter and Escape worked; Ctrl-C interrupted foreground work. |
 | Capture | `herdr pane read <pane> --source recent --lines N` | Small N could return empty below viewport height; a 200-line request plus local trim was stable. |
+| Viewport capture | `herdr pane read <pane> --source visible` | Verified on 2026-09-17 against Herdr 0.8.0 (protocol 19): `herdr pane read --help` documents `--source <SOURCE>` with `[possible values: visible, recent, recent-unwrapped, detection]`; `--source visible` exited 0 and returned 51 lines (the viewport) while `--source recent --lines 200` returned 200. This is the viewport-only read behind `fm_backend_herdr_visible_capture`, which Kimi's trust-dialog gate requires. |
 | Native state | `herdr agent get <pane>` | Working and done transitions were visible on some harnesses; live Claude Code 2.1.236 on Herdr 0.8.0 kept `agent_status=idle` for an entire landed turn, including a multi-second tool call, so submit confirmation falls through to the shared composer verdict. Native `busy` remains positive activity evidence, while native `idle` cannot close a turn and the adapter's semantic lifecycle decides worker state. |
 | Restart | guarded named-session stop then start | Workspace, tab, pane, and labels persisted; the agent process and registration did not. |
 | Close | `herdr pane close <pane> --session <name>` | The exact one-pane task tab closed; closing a final tab could remove the workspace. |
@@ -2064,3 +2065,18 @@ A throwaway scout was spawned through `bin/fm-spawn.sh --scout --harness omp --m
 6. `bin/fm-control.sh <id> exit` stopped the agent and `bin/fm-teardown.sh` returned the worktree and closed the item.
 
 `FM_OMP_LIVE_E2E=1 tests/fm-omp-primary-live-e2e.test.sh` refreshes the primary evidence; the worker path above is refreshed by repeating the scout dispatch after any omp upgrade.
+
+## Hermes
+
+Hermes Agent (hermes-agent by Nous Research) is a single-binary AI agent that runs interactively in a terminal.
+It is a verified primary harness: the session-start digest, turn-end guard, and background watcher are delivered through a Hermes plugin (`bin/hermes-plugin/firstmate/`), and the runtime adapter (`bin/backends/hermes.sh`) owns spawn/steer/state dispatch.
+Hermes sets `HERMES_CLI=1` on its CLI and every tool subprocess; `bin/fm-harness.sh` detects it by marker and ancestry.
+The plugin installs through `bin/fm-hermes-plugin-install.sh`, which copies the plugin tree into `~/.hermes/plugins/firstmate/`.
+
+```sh
+bin/fm-test-run.sh tests/fm-backend-hermes.test.sh
+```
+
+The adapter is EXPERIMENTAL: no dedicated real-Hermes CI lane exists yet, and the portable regression above pins the PID-file state machine (missing/unreadable/dead) and the `fm_backend_agent_state` dispatch wiring only.
+Live spawn/steer against a real Hermes worker, plugin hook delivery under compaction, and the background watcher's wake-on-event path are not yet covered by an automated guard.
+[`hermes.md`](hermes.md) owns the fuller verification record, including plugin load evidence and the supervision protocol links.

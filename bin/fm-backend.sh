@@ -66,8 +66,8 @@ FM_BACKEND_CONFIG_DIR="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 # cmux is EXPERIMENTAL and spawn-capable, session-provider-only like
 # herdr/zellij - verified against the real 0.64.17 binary (docs/cmux-backend.md).
 # codex-app remains deliberately absent; see docs/codex-app-backend.md.
-FM_BACKEND_KNOWN="tmux herdr zellij orca cmux"
-FM_BACKEND_SPAWN="tmux herdr zellij orca cmux"
+FM_BACKEND_KNOWN="tmux herdr zellij orca cmux hermes"
+FM_BACKEND_SPAWN="tmux herdr zellij orca cmux hermes"
 
 # fm_backend_list_contains: whitespace-delimited membership without relying on
 # shell word splitting. fm-backend.sh is normally sourced by bash scripts, but
@@ -655,6 +655,13 @@ fm_backend_source() {  # <name>
         _FM_BACKEND_CMUX_SOURCED=1
       fi
       ;;
+    hermes)
+      if [ -z "${_FM_BACKEND_HERMES_SOURCED:-}" ]; then
+        # shellcheck source=/dev/null
+        . "$FM_BACKEND_LIB_DIR/backends/hermes.sh" || return 1
+        _FM_BACKEND_HERMES_SOURCED=1
+      fi
+      ;;
   esac
 }
 
@@ -728,6 +735,36 @@ fm_backend_capture() {  # <backend> <target> <lines> [expected-label]
     cmux) fm_backend_cmux_capture "$@" ;;
     *) echo "error: no capture implementation for backend '$backend'" >&2; return 1 ;;
   esac
+}
+
+# FM_BACKEND_VISIBLE_CAPTURE: backends with a verified viewport-only read, each
+# implementing fm_backend_<name>_visible_capture. This one list answers both the
+# capability question and the dispatch, so they cannot disagree. cmux is absent
+# pending live verification: its `read-screen` without `--scrollback` plausibly
+# reads only the viewport, but that has not been observed on a real cmux, and
+# the adapter's own capture opts into history with `--scrollback`. orca's
+# `terminal read --limit` is a history read with no viewport mode.
+FM_BACKEND_VISIBLE_CAPTURE="tmux herdr zellij"
+
+# fm_backend_visible_capture_supported: whether <backend> can read the visible
+# viewport WITHOUT scrollback. Callers that must not mistake a scrolled-away
+# frame for the live screen ask this first and fail closed on a no.
+fm_backend_visible_capture_supported() {  # <backend>
+  fm_backend_list_contains "$FM_BACKEND_VISIBLE_CAPTURE" "$1"
+}
+
+# fm_backend_visible_capture: the visible viewport, never scrollback. A backend
+# outside FM_BACKEND_VISIBLE_CAPTURE declines here rather than answering with a
+# history-backed capture the caller would read as the live screen.
+fm_backend_visible_capture() {  # <backend> <target> [expected-label]
+  local backend=$1
+  shift
+  fm_backend_visible_capture_supported "$backend" || {
+    echo "error: backend '$backend' has no verified viewport-bounded capture primitive" >&2
+    return 1
+  }
+  fm_backend_source "$backend" || return 1
+  "fm_backend_${backend}_visible_capture" "$@"
 }
 
 # fm_backend_send_key: one backend-supported named special key.
@@ -929,6 +966,7 @@ fm_backend_agent_state() {  # <backend> <target>
   case "$backend" in
     tmux) fm_backend_tmux_agent_state "$target" ;;
     herdr) fm_backend_herdr_agent_state "$target" ;;
+    hermes) fm_backend_hermes_agent_state "$target" ;;
     *) printf 'unverified' ;;
   esac
 }
